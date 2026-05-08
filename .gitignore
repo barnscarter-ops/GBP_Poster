@@ -1,0 +1,8 @@
+config.local.json
+client_secret.json
+*.secret.json
+*.token.json
+.env
+.env.*
+logs/
+state/

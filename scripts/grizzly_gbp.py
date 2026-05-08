@@ -281,11 +281,15 @@ def scan_photos(args: argparse.Namespace) -> None:
         try:
             identity = file_identity(path)
         except OSError as exc:
-            log(config, f"SKIP unreadable {path}: {exc}")
+            message = f"SKIP unreadable {path}: {exc}"
+            print(message) if args.dry_run else log(config, message)
             continue
         if identity in state.get("processed_photos", {}):
             continue
-        score = openai_score(path, config) or heuristic_score(path, config)
+        if args.dry_run:
+            score = heuristic_score(path, config)
+        else:
+            score = openai_score(path, config) or heuristic_score(path, config)
         record = {
             "path": str(path),
             "processed_at": now_stamp(),
@@ -300,9 +304,11 @@ def scan_photos(args: argparse.Namespace) -> None:
             target = copy_candidate(path, score, config, args.dry_run)
             record["copied_to"] = str(target)
             copied.append(record)
-            log(config, f"{'DRY ' if args.dry_run else ''}COPY candidate {path.name} -> {target.name} ({score.score})")
+            message = f"{'DRY ' if args.dry_run else ''}COPY candidate {path.name} -> {target.name} ({score.score})"
+            print(message) if args.dry_run else log(config, message)
         else:
-            log(config, f"SKIP candidate {path.name} score={score.score} reasons={'; '.join(score.reasons)}")
+            message = f"SKIP candidate {path.name} score={score.score} reasons={'; '.join(score.reasons)}"
+            print(message) if args.dry_run else log(config, message)
         if not args.dry_run:
             state.setdefault("processed_photos", {})[identity] = record
     if not args.dry_run:

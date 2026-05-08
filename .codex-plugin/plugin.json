@@ -1,0 +1,41 @@
+{
+  "name": "grizzly-gbp-poster",
+  "version": "0.1.0",
+  "description": "Local Grizzly Google Business Profile posting workflow for OneDrive photo intake, workbook approval, posting, and monthly archive cleanup.",
+  "author": {
+    "name": "Grizzly Electrical Solutions",
+    "email": "owner@grizzlyelectric.com",
+    "url": "https://grizzlyelectrical.com"
+  },
+  "homepage": "https://grizzlyelectrical.com",
+  "repository": "local",
+  "license": "Proprietary",
+  "keywords": [
+    "grizzly",
+    "google-business-profile",
+    "onedrive",
+    "social-posting"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Grizzly GBP Poster",
+    "shortDescription": "Prepare, approve, post, and archive Grizzly Google Business Profile updates.",
+    "longDescription": "Scans OneDrive phone photos for usable electrical job images, copies good candidates into a curated Google Business Profile folder, prepares spreadsheet rows for approval, posts approved rows, and archives used photos to OneDrive online-only storage each month.",
+    "developerName": "Grizzly Electrical Solutions",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Automation"
+    ],
+    "websiteURL": "https://grizzlyelectrical.com",
+    "privacyPolicyURL": "https://grizzlyelectrical.com",
+    "termsOfServiceURL": "https://grizzlyelectrical.com",
+    "defaultPrompt": [
+      "Scan my new OneDrive photos for Grizzly GBP candidates.",
+      "Prepare today's Google Business Profile post for approval.",
+      "Archive last month's used GBP post photos and mark them online-only."
+    ],
+    "brandColor": "#166534"
+  }
+}

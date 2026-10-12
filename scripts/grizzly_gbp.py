@@ -649,11 +649,14 @@ def google_auth_finish(args: argparse.Namespace) -> None:
 CAPTION_MAX = 1500
 
 # Phone patterns: (469) 863-9804 / 469-863-9804 / 469.863.9804 / 4698639804 /
-# +1 469 863 9804 / 863-9804 / vanity 555-555-TREE.
+# +1 469 863 9804 / 863-9804 / vanity 555-555-TREE / 1-800-FLOWERS /
+# 469-GRIZZLY.
 _PHONE_PATTERNS = [
     re.compile(r"(\+?1[\s.\-]?)?(\(\d{3}\)|\b\d{3})[\s.\-]?\d{3}[\s.\-]?\d{4}\b"),
     re.compile(r"\b\d{3}[\s.\-]\d{4}\b"),
     re.compile(r"\b\d{3}[\s.\-]\d{3}[\s.\-][A-Za-z]{4}\b"),
+    re.compile(r"\b1[\s.\-]?800[\s.\-][A-Za-z]{7}\b"),
+    re.compile(r"\b\d{3}[\s.\-][A-Za-z]{7}\b"),
 ]
 _URL_PATTERN = re.compile(
     r"(https?://|www\.)\S+|\b[a-z0-9][a-z0-9-]*\.(com|net|org|io|co|us|biz|info|me|app|site|online)\b",
@@ -665,7 +668,8 @@ _ADDRESS_PATTERNS = [
     re.compile(
         r"\b\d{1,6}\s+(?:[A-Z][A-Za-z]+\s+){1,3}"
         r"(St|Street|Ave|Avenue|Blvd|Boulevard|Rd|Road|Dr|Drive|Ln|Lane|Ct|Court|"
-        r"Pkwy|Parkway|Hwy|Highway)\.?\b"
+        r"Pkwy|Parkway|Hwy|Highway)\.?\b",
+        re.IGNORECASE,
     ),
     re.compile(r"\b(Suite|Ste\.?|Unit|Apt\.?)\s*#?\s*\d+\b", re.IGNORECASE),
     re.compile(r"\b[A-Z]{2}\s+\d{5}(-\d{4})?\b"),

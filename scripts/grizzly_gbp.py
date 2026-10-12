@@ -629,6 +629,188 @@ def google_auth_finish(args: argparse.Namespace) -> None:
     print(f"Saved Google auth details to {CONFIG_LOCAL}")
 
 
+# ---------------------------------------------------------------------------
+# GBP post content-policy gate.
+#
+# Ported from scripts/gbp-poster/policy-check.mjs in barnscarter-ops/SEO-Agents-App.
+#
+# Incident driving this gate: 2026-07-31 -- three scheduled posts carried
+# "(469) 863-9804" in the caption; Google rejected all three within minutes and
+# disabled posting profile-wide. This gate makes that class of failure
+# impossible to ship again: post_workbook_row() fails closed on any violation.
+#
+# Grounded in Google's published policies (reviewed 2026-08-01):
+#   - Posts content policy: "We do not allow your post content to include a
+#     phone number." Links/CTAs belong in the post's button, not the text.
+#   - Prohibited & restricted content: offensive/sexual content, regulated
+#     goods, personal info, off-topic, repetitive/duplicate content.
+# ---------------------------------------------------------------------------
+
+CAPTION_MAX = 1500
+
+# Phone patterns: (469) 863-9804 / 469-863-9804 / 469.863.9804 / 4698639804 /
+# +1 469 863 9804 / 863-9804 / vanity 555-555-TREE / 1-800-FLOWERS /
+# 469-GRIZZLY.
+_PHONE_PATTERNS = [
+    re.compile(r"(\+?1[\s.\-]?)?(\(\d{3}\)|\b\d{3})[\s.\-]?\d{3}[\s.\-]?\d{4}\b"),
+    re.compile(r"\b\d{3}[\s.\-]\d{4}\b"),
+    re.compile(r"\b\d{3}[\s.\-]\d{3}[\s.\-][A-Za-z]{4}\b"),
+    re.compile(r"\b1[\s.\-]?800[\s.\-][A-Za-z]{7}\b"),
+    re.compile(r"\b\d{3}[\s.\-][A-Za-z]{7}\b"),
+]
+_URL_PATTERN = re.compile(
+    r"(https?://|www\.)\S+|\b[a-z0-9][a-z0-9-]*\.(com|net|org|io|co|us|biz|info|me|app|site|online)\b",
+    re.IGNORECASE,
+)
+_EMAIL_PATTERN = re.compile(r"\b[\w.+-]+@[\w-]+\.[a-z]{2,}\b", re.IGNORECASE)
+# Street address or city/state+zip in text (addresses belong on the profile).
+_ADDRESS_PATTERNS = [
+    re.compile(
+        r"\b\d{1,6}\s+(?:[A-Z][A-Za-z]+\s+){1,3}"
+        r"(St|Street|Ave|Avenue|Blvd|Boulevard|Rd|Road|Dr|Drive|Ln|Lane|Ct|Court|"
+        r"Pkwy|Parkway|Hwy|Highway)\.?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(Suite|Ste\.?|Unit|Apt\.?)\s*#?\s*\d+\b", re.IGNORECASE),
+    re.compile(r"\b[A-Z]{2}\s+\d{5}(-\d{4})?\b"),
+]
+# "sex" is a documented auto-reject even in innocent phrases; the rest are
+# plain profanity Google's filter treats as offensive content.
+_BANNED_WORDS = re.compile(
+    r"\b(sex\w*|fuck\w*|shit\w*|bitch\w*|damn(ed|it)?|porn\w*|nude|nudity)\b",
+    re.IGNORECASE,
+)
+# Regulated goods/services (restricted content policy). An electrical
+# contractor's posts should never mention these; any hit is a red flag.
+_REGULATED = re.compile(
+    r"\b(alcohol|beer|wine|liquor|vodka|whiskey|tobacco|cigarettes?|vapes?|vaping|"
+    r"cannabis|marijuana|cbd|kratom|guns?|firearms?|ammo|ammunition|casinos?|"
+    r"gambling|lottery|betting|pharmacy|pharmaceutical|prescription|opioids?)\b",
+    re.IGNORECASE,
+)
+
+
+@dataclasses.dataclass
+class PolicyViolation:
+    rule: str
+    detail: str
+
+
+def policy_check_caption(
+    caption: str, other_captions: list[str] | None = None
+) -> list[PolicyViolation]:
+    """Validate a post caption against Google's post content policy.
+
+    Returns a list of violations (empty = compliant). Ported from
+    checkPostPolicy() in policy-check.mjs; same rules, same order.
+    """
+    violations: list[PolicyViolation] = []
+    caption = str(caption or "")
+
+    if not caption.strip():
+        violations.append(PolicyViolation("empty-caption", "Caption is empty."))
+        return violations
+    if len(caption) > CAPTION_MAX:
+        violations.append(
+            PolicyViolation(
+                "caption-too-long",
+                f"Caption is {len(caption)} chars (GBP limit {CAPTION_MAX}).",
+            )
+        )
+
+    for pattern in _PHONE_PATTERNS:
+        match = pattern.search(caption)
+        if match:
+            violations.append(
+                PolicyViolation(
+                    "phone-number",
+                    f'Phone number in post text ("{match.group(0).strip()}") \u2014 '
+                    "Google auto-rejects this. Use the CTA button; the profile's "
+                    'verified number powers "Call now".',
+                )
+            )
+            break
+
+    match = _URL_PATTERN.search(caption)
+    if match:
+        violations.append(
+            PolicyViolation(
+                "url-in-text",
+                f'URL/domain in post text ("{match.group(0).strip()}") \u2014 '
+                "links belong in the CTA button, not the caption.",
+            )
+        )
+    match = _EMAIL_PATTERN.search(caption)
+    if match:
+        violations.append(
+            PolicyViolation(
+                "email-in-text",
+                f'Email address in post text ("{match.group(0)}").',
+            )
+        )
+    for pattern in _ADDRESS_PATTERNS:
+        match = pattern.search(caption)
+        if match:
+            violations.append(
+                PolicyViolation(
+                    "address-in-text",
+                    f'Street address/zip in post text ("{match.group(0).strip()}") \u2014 '
+                    "addresses belong on the profile, not in posts.",
+                )
+            )
+            break
+
+    match = _BANNED_WORDS.search(caption)
+    if match:
+        violations.append(
+            PolicyViolation(
+                "banned-word",
+                f'"{match.group(0)}" triggers Google\u2019s offensive-content filter '
+                "(even in innocent phrases).",
+            )
+        )
+    match = _REGULATED.search(caption)
+    if match:
+        violations.append(
+            PolicyViolation(
+                "regulated-content",
+                f'"{match.group(0)}" falls under Google\u2019s restricted '
+                "products/services policy.",
+            )
+        )
+
+    letters = re.sub(r"[^A-Za-z]", "", caption)
+    if len(letters) > 30:
+        upper = len(re.sub(r"[^A-Z]", "", caption))
+        if upper / len(letters) > 0.6:
+            violations.append(
+                PolicyViolation(
+                    "all-caps",
+                    "Caption is mostly uppercase \u2014 reads as spam/shouting to the filter.",
+                )
+            )
+
+    if other_captions:
+        def _norm(value: str) -> str:
+            return re.sub(r"\s+", " ", str(value or "")).strip().lower()
+
+        self_norm = _norm(caption)
+        if self_norm and any(_norm(other) == self_norm for other in other_captions):
+            violations.append(
+                PolicyViolation(
+                    "duplicate-caption",
+                    "Caption is identical to another post in the schedule \u2014 "
+                    "Google rejects repetitive content.",
+                )
+            )
+
+    return violations
+
+
+def format_policy_violations(violations: list[PolicyViolation]) -> str:
+    return "\n".join(f"  [{v.rule}] {v.detail}" for v in violations)
+
+
 def create_google_post(caption: str, image_url: str, config: dict[str, Any]) -> str:
     account = config.get("google_account_id")
     location = config.get("google_location_id")
@@ -672,6 +854,18 @@ def post_workbook_row(
     image_link = str(ws.cell(row, cols["ImageLink"]).value or "").strip()
     if not caption:
         print(f"Row {row} skipped: CaptionDraft is required before posting.")
+        return False
+    violations = policy_check_caption(caption)
+    if violations:
+        detail = format_policy_violations(violations)
+        print(f"Row {row} BLOCKED by content-policy gate:\n{detail}")
+        if dry_run:
+            return False
+        log(config, f"Policy gate blocked GBP row {row} for {target.isoformat()}:\n{detail}")
+        ws.cell(row, cols["Notes"]).value = (
+            f"BLOCKED by content-policy gate at {now_stamp()}:\n{detail}"
+        )
+        wb.save(config["workbook_path"])
         return False
     if not image_link:
         image_path = Path(asset)
